@@ -16,6 +16,7 @@
 
 import ContainerNetworkService
 import ContainerizationOCI
+import Containerization
 
 public struct ContainerConfiguration: Sendable, Codable {
     /// Identifier for the container.
@@ -50,6 +51,8 @@ public struct ContainerConfiguration: Sendable, Codable {
     public var virtualization: Bool = false
     /// Enable SSH agent socket forwarding from host to container.
     public var ssh: Bool = false
+    /// The hosts configuration for the container.
+    public var hosts: Hosts? = nil
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -68,6 +71,7 @@ public struct ContainerConfiguration: Sendable, Codable {
         case runtimeHandler
         case virtualization
         case ssh
+        case hosts
     }
 
     /// Create a configuration from the supplied Decoder, initializing missing
@@ -82,6 +86,9 @@ public struct ContainerConfiguration: Sendable, Codable {
         publishedSockets = try container.decodeIfPresent([PublishSocket].self, forKey: .publishedSockets) ?? []
         labels = try container.decodeIfPresent([String: String].self, forKey: .labels) ?? [:]
         sysctls = try container.decodeIfPresent([String: String].self, forKey: .sysctls) ?? [:]
+        dns = try container.decodeIfPresent(DNSConfiguration.self, forKey: .dns)
+        rosetta = try container.decodeIfPresent(Bool.self, forKey: .rosetta) ?? false
+        hosts = try container.decodeIfPresent(Hosts.self, forKey: .hosts)
 
         // NOTE: migrates [String] to [AttachmentConfiguration]; remove [String] support in a later release
         if container.contains(.networks) {
@@ -95,8 +102,6 @@ public struct ContainerConfiguration: Sendable, Codable {
             networks = []
         }
 
-        dns = try container.decodeIfPresent(DNSConfiguration.self, forKey: .dns)
-        rosetta = try container.decodeIfPresent(Bool.self, forKey: .rosetta) ?? false
         initProcess = try container.decode(ProcessConfiguration.self, forKey: .initProcess)
         platform = try container.decodeIfPresent(ContainerizationOCI.Platform.self, forKey: .platform) ?? .current
         resources = try container.decodeIfPresent(Resources.self, forKey: .resources) ?? .init()
@@ -146,5 +151,6 @@ public struct ContainerConfiguration: Sendable, Codable {
         self.id = id
         self.image = image
         self.initProcess = process
+        self.hosts = nil
     }
 }

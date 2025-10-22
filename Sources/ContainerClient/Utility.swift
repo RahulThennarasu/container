@@ -16,12 +16,12 @@
 
 import ContainerNetworkService
 import ContainerPersistence
-import Containerization
 import ContainerizationError
 import ContainerizationExtras
 import ContainerizationOCI
 import Foundation
 import TerminalProgress
+import Containerization
 
 public struct Utility {
     private static let infraImages = [
@@ -216,6 +216,29 @@ public struct Utility {
         config.publishedSockets = try Parser.publishSockets(management.publishSockets)
 
         config.ssh = management.ssh
+
+        // Setup hosts configuration for container name resolution
+        var hosts = Hosts.default
+
+        // Query registry for other containers on the same networks
+        for attachmentConfiguration in config.networks {
+            let networkName = attachmentConfiguration.network
+            let otherContainers = await ContainerRegistry.shared.getContainersOnNetwork(networkName)
+
+            for containerInfo in otherContainers {
+                // Add each container as a hosts entry
+                hosts.entries.append(
+                    Hosts.Entry(
+                        ipAddress: containerInfo.ipAddress,
+                        hostnames: [containerInfo.name]
+                    )
+                )
+            }
+            
+        
+        }
+
+        config.hosts = hosts
 
         return (config, kernel)
     }
