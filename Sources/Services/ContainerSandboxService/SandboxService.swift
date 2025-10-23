@@ -185,19 +185,50 @@ public actor SandboxService {
                 czConfig.process.stdout = stdout
                 czConfig.process.stderr = stderr
                 czConfig.process.stdin = stdin
+
+                // Pass network names to LinuxContainer so it can register in ContainerRegistry
+                let networkNames = config.networks.map { $0.network }
+                print("DEBUG SandboxService: Setting czConfig.networks to \(networkNames)")
+                czConfig.networks = networkNames
+
                 // NOTE: We can support a user providing new entries eventually, but for now craft
                 // a default /etc/hosts.
-                var hostsEntries = [Hosts.Entry.localHostIPV4()]
-                if !interfaces.isEmpty {
-                    let primaryIfaceAddr = interfaces[0].address
-                    let ip = primaryIfaceAddr.split(separator: "/")
-                    hostsEntries.append(
-                        Hosts.Entry(
-                            ipAddress: String(ip[0]),
-                            hostnames: [czConfig.hostname],
-                        ))
+
+                // Use the hosts configuration from config (built in Utility.swift with other containers)
+                // Add this container's own IP to the hosts
+                // Use the hosts configuration from config (built in Utility.swift with other containers)
+                // Add this container's own IP to the hosts
+                if let configHosts = config.hosts {
+                    print("DEBUG: config.hosts has \(configHosts.entries.count) entries")
+                    for entry in configHosts.entries {
+                        print("DEBUG: Host entry: \(entry.ipAddress) -> \(entry.hostnames)")
+                    }
+                    var hostsEntries = configHosts.entries
+                    if !interfaces.isEmpty {
+                        let primaryIfaceAddr = interfaces[0].address
+                        let ip = primaryIfaceAddr.split(separator: "/")
+                        hostsEntries.append(
+                            Hosts.Entry(
+                                ipAddress: String(ip[0]),
+                                hostnames: [czConfig.hostname],
+                            ))
+                    }
+                    czConfig.hosts = Hosts(entries: hostsEntries)
+                } else {
+                    // Fallback if no hosts config provided
+                    var hostsEntries = [Hosts.Entry.localHostIPV4()]
+                    if !interfaces.isEmpty {
+                        let primaryIfaceAddr = interfaces[0].address
+                        let ip = primaryIfaceAddr.split(separator: "/")
+                        hostsEntries.append(
+                            Hosts.Entry(
+                                ipAddress: String(ip[0]),
+                                hostnames: [czConfig.hostname]
+                            ))
+                    } 
+                    czConfig.hosts = Hosts(entries: hostsEntries)
                 }
-                czConfig.hosts = Hosts(entries: hostsEntries)
+                
             }
 
             await self.setContainer(
