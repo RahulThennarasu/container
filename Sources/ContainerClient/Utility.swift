@@ -221,18 +221,13 @@ public struct Utility {
 
         // Setup hosts configuration for container name resolution
         var hosts = Hosts.default
-
-        var debugLog = "Starting hosts configuration for \(id)\n"
         
         // Query registry for other containers on the same networks
         for attachmentConfiguration in config.networks {
             let networkName = attachmentConfiguration.network
-            debugLog += "Querying registry for network: \(networkName)\n"
             let otherContainers = await ContainerRegistry.shared.getContainersOnNetwork(networkName)
-            debugLog += "Found \(otherContainers.count) containers\n"
 
             for containerInfo in otherContainers {
-                debugLog += "Adding: \(containerInfo.name) -> \(containerInfo.ipAddress)\n"
                 // Add each container as a hosts entry
                 hosts.entries.append(
                     Hosts.Entry(
@@ -244,8 +239,6 @@ public struct Utility {
             
         
         }
-
-        try? debugLog.write(toFile: "/tmp/utility-debug-\(id).log", atomically: true, encoding: .utf8)
 
         config.hosts = hosts
 
