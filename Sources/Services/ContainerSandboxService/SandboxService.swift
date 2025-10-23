@@ -179,56 +179,52 @@ public actor SandboxService {
 
             let id = config.id
             let rootfs = try bundle.containerRootfs.asMount
+            // Query registry for other containers BEFORE creating LinuxContainer
+            var hostsEntries = [Hosts.Entry.localHostIPV4()]
+
+            for attachmentConfig in config.networks {
+                let networkName = attachmentConfig.network
+                let otherContainers = await ContainerRegistry.shared.getContainersOnNetwork(networkName)
+                
+                for containerInfo in otherContainers {
+                    // Don't add ourselves
+                    if containerInfo.name != config.id {
+                        hostsEntries.append(
+                            Hosts.Entry(
+                                ipAddress: containerInfo.ipAddress,
+                                hostnames: [containerInfo.name]
+                            )
+                        )
+                    }
+                }
+            }
+
+            // Add this container's own IP to hosts
+            if !interfaces.isEmpty {
+                let primaryIfaceAddr = interfaces[0].address
+                let ip = primaryIfaceAddr.split(separator: "/")
+                hostsEntries.append(
+                    Hosts.Entry(
+                        ipAddress: String(ip[0]),
+                        hostnames: [config.id]  // Use config.id instead of czConfig.hostname
+                    ))
+            }
+
+            // Store network names for registration later
+            let networkNames = config.networks.map { $0.network }
+
             let container = try LinuxContainer(id, rootfs: rootfs, vmm: vmm, logger: self.log) { czConfig in
                 try Self.configureContainer(czConfig: &czConfig, config: config)
                 czConfig.interfaces = interfaces
                 czConfig.process.stdout = stdout
                 czConfig.process.stderr = stderr
                 czConfig.process.stdin = stdin
-
-                // Pass network names to LinuxContainer so it can register in ContainerRegistry
-                let networkNames = config.networks.map { $0.network }
-                print("DEBUG SandboxService: Setting czConfig.networks to \(networkNames)")
-                czConfig.networks = networkNames
-
-                // NOTE: We can support a user providing new entries eventually, but for now craft
-                // a default /etc/hosts.
-
-                // Use the hosts configuration from config (built in Utility.swift with other containers)
-                // Add this container's own IP to the hosts
-                // Use the hosts configuration from config (built in Utility.swift with other containers)
-                // Add this container's own IP to the hosts
-                if let configHosts = config.hosts {
-                    print("DEBUG: config.hosts has \(configHosts.entries.count) entries")
-                    for entry in configHosts.entries {
-                        print("DEBUG: Host entry: \(entry.ipAddress) -> \(entry.hostnames)")
-                    }
-                    var hostsEntries = configHosts.entries
-                    if !interfaces.isEmpty {
-                        let primaryIfaceAddr = interfaces[0].address
-                        let ip = primaryIfaceAddr.split(separator: "/")
-                        hostsEntries.append(
-                            Hosts.Entry(
-                                ipAddress: String(ip[0]),
-                                hostnames: [czConfig.hostname],
-                            ))
-                    }
-                    czConfig.hosts = Hosts(entries: hostsEntries)
-                } else {
-                    // Fallback if no hosts config provided
-                    var hostsEntries = [Hosts.Entry.localHostIPV4()]
-                    if !interfaces.isEmpty {
-                        let primaryIfaceAddr = interfaces[0].address
-                        let ip = primaryIfaceAddr.split(separator: "/")
-                        hostsEntries.append(
-                            Hosts.Entry(
-                                ipAddress: String(ip[0]),
-                                hostnames: [czConfig.hostname]
-                            ))
-                    } 
-                    czConfig.hosts = Hosts(entries: hostsEntries)
-                }
                 
+                // Set the hosts we built above
+                czConfig.hosts = Hosts(entries: hostsEntries)
+                
+                // Store network names so LinuxContainer can register itself
+                czConfig.networks = networkNames
             }
 
             await self.setContainer(
